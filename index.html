@@ -3,83 +3,232 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Industrie 4.0 AR Mockup - Testpage</title>
-  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.min.js"></script>
+  <title>Industrie 4.0 AR Mockup - CPS-i40</title>
+  
+  <!-- Подключение библиотек A-Frame и AR.js -->
+  <script src="https://aframe.io"></script>
+  <script src="https://jsdelivr.net"></script>
+  
   <style>
     :root { color-scheme: dark; }
     body {
       margin: 0;
-      font-family: Arial, sans-serif;
+      font-family: 'Segoe UI', Arial, sans-serif;
       overflow: hidden;
+      background-color: #000;
+      user-select: none;
+    }
+    
+    /* Верхняя панель статуса (Безопасность и ПЛК) */
+    .top-bar {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      padding: 12px 15px;
+      background: rgba(0, 0, 0, 0.8);
+      backdrop-filter: blur(5px);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      z-index: 100;
+      border-bottom: 2px solid #00ff66;
+      color: #fff;
+      font-size: 14px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+    }
+    .status-secure { 
+      color: #00ff66; 
+      font-weight: bold;
     }
 
+    /* Главный AR-оверлей (появляется при распознавании маркера HIRO) */
     #overlay {
       display: none;
       position: fixed;
-      top: 50%;
-      left: 50%;
+      bottom: 25px;
+      left: 15px;
+      right: 15px;
       z-index: 10;
-      min-width: 220px;
-      padding: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.55);
-      backdrop-filter: blur(2px);
-      font-size: 16px;
+      padding: 18px;
+      border: 1px solid rgba(0, 255, 102, 0.35);
+      border-radius: 10px;
+      background: rgba(10, 15, 12, 0.85);
+      backdrop-filter: blur(8px);
       color: #fff;
+      box-shadow: 0 4px 25px rgba(0,0,0,0.7);
     }
 
-    /* Kamera-/Canvas-Darstellung */
+    .device-title { 
+      font-size: 16px;
+      font-weight: bold; 
+      color: #00ff66; 
+      margin-bottom: 12px; 
+      border-bottom: 1px solid #333; 
+      padding-bottom: 6px; 
+    }
+    
+    .data-grid { 
+      display: grid; 
+      grid-template-columns: 1fr 1fr; 
+      gap: 10px; 
+      font-size: 14px; 
+      margin-bottom: 18px; 
+    }
+    .data-label { color: #aaaaaa; }
+    .data-value { font-weight: bold; text-align: right; }
+    .value-ok { color: #00ff66; }
+
+    /* Полоса технологического процесса (Шаги 1-5 из ТЗ) */
+    .process-tracker {
+      display: flex;
+      justify-content: space-between;
+      position: relative;
+      margin-top: 12px;
+      padding-top: 12px;
+      border-top: 1px solid #333;
+    }
+    .step { 
+      font-size: 10px; 
+      color: #555555; 
+      text-align: center; 
+      flex: 1; 
+      transition: color 0.3s ease;
+    }
+    .step::before { 
+      content: '○'; 
+      display: block; 
+      color: #555555; 
+      font-size: 12px;
+      margin-bottom: 2px;
+    }
+    .step.active { 
+      color: #00ff66; 
+      font-weight: bold; 
+    }
+    .step.active::before { 
+      content: '●'; 
+      color: #00ff66; 
+    }
+
+    /* Оптимизация отображения камеры */
     video, canvas {
       width: 100vw !important;
       height: 100vh !important;
-      object-fit: contain !important; /* weniger Zoom-Eindruck */
+      object-fit: cover !important;
     }
   </style>
 </head>
 <body>
+
+  <!-- Статичная верхняя панель (Всегда видна) -->
+  <div class="top-bar">
+    <div><strong>CPS-i40</strong> App Monitor</div>
+    <div class="status-secure">🔒 HTTPS / TLS Secure</div>
+  </div>
+
+  <!-- AR Сцена с маркером Hiro -->
   <a-scene
     vr-mode-ui="enabled: false"
-    renderer="logarithmicDepthBuffer: true"
+    renderer="logarithmicDepthBuffer: true; precision: medium;"
     embedded
-    arjs="sourceType: webcam; facingMode: environment; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: false;">
+    arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;">
+    
     <a-marker preset="hiro" id="hiro-marker"></a-marker>
-    <a-entity camera></a-entity>
+    
   </a-scene>
 
+  <!-- Информационный Dashboard (Появляется при маркере) -->
   <div id="overlay">
-    <div id="marker-count">The Marker was not yet found</div>
+    <div class="device-title">Anlage: CPS-i40 Befüllstation</div>
+    
+    <div class="data-grid">
+      <div class="data-label">SPS Status:</div>
+      <div class="data-value value-ok" id="sps-status">Siemens S7-1516 (Online)</div>
+      
+      <div class="data-label">Füllstand (Sensor):</div>
+      <div class="data-value" id="sensor-value">0% (Dose leer)</div>
+      
+      <div class="data-label">Ventil-Aktion:</div>
+      <div class="data-value" id="ventil-status">Warten...</div>
+    </div>
+
+    <!-- Индикатор шагов 1-5 на основе вашей технологической схемы -->
+    <div class="process-tracker">
+      <div class="step" id="step1">1. Sensor</div>
+      <div class="step" id="step2">2. ET200SP</div>
+      <div class="step" id="step3">3. SPS</div>
+      <div class="step" id="step4">4. Ventil</div>
+      <div class="step" id="step5">5. Full</div>
+    </div>
   </div>
 
   <script>
     const overlay = document.getElementById('overlay');
     const hiroMarker = document.getElementById('hiro-marker');
-    const markerCount = document.getElementById('marker-count');
-    let markerFoundCount = 0;
+    
+    // Элементы вывода данных
+    const sensorValue = document.getElementById('sensor-value');
+    const ventilStatus = document.getElementById('ventil-status');
+    
+    let liveSimulationInterval;
+    let currentVolume = 0; // Имитация уровня заполнения бака в %
 
+    // Функция переключения активных шагов (1-5)
+    function updateProcessSteps(activeCount) {
+      for (let i = 1; i <= 5; i++) {
+        const stepEl = document.getElementById(`step${i}`);
+        if (i <= activeCount) {
+          stepEl.classList.add('active');
+        } else {
+          stepEl.classList.remove('active');
+        }
+      }
+    }
+
+    // Событие: Маркер найден в поле зрения камеры
     hiroMarker.addEventListener('markerFound', () => {
-      console.debug('Marker found');
-      markerFoundCount += 1;
-      markerCount.textContent = `The Marker was found the ${markerFoundCount} time`;
+      console.debug('Hiro Marker found');
       overlay.style.display = 'block';
+      
+      // Симуляция получения Live-данных по кругу
+      liveSimulationInterval = setInterval(() => {
+        currentVolume += 20;
+        
+        if (currentVolume > 100) {
+          currentVolume = 0;
+        }
+
+        // Логика состояний на основе ваших схем процесса
+        if (currentVolume === 0) {
+          sensorValue.innerHTML = `0% (<span style="color:#ffcc00">Dose leer</span>)`;
+          ventilStatus.innerHTML = 'Befüllung startet...';
+          updateProcessSteps(2); // Данные идут от сенсора к распределителю
+        } 
+        else if (currentVolume > 0 && currentVolume < 100) {
+          sensorValue.innerHTML = `${currentVolume}%`;
+          ventilStatus.innerHTML = '<span style="color:#00ff66">Befüllung läuft</span>';
+          updateProcessSteps(4); // ПЛК открыл вентиль, идет заправка
+        } 
+        else if (currentVolume === 100) {
+          sensorValue.innerHTML = `100% (<span style="color:#00ff66">Dose voll</span>)`;
+          // Сигнал обратной связи (Rückmeldung) останавливает процесс
+          ventilStatus.innerHTML = '<span style="color:#ff3333">Gestoppt (Rückmeldung)</span>';
+          updateProcessSteps(5); // Цикл завершен, сработал возврат данных
+        }
+      }, 1500); // Частота обновления данных — раз в 1.5 секунды
     });
 
+    // Событие: Камеру отвели от маркера
     hiroMarker.addEventListener('markerLost', () => {
-      console.debug('Marker lost');
+      console.debug('Hiro Marker lost');
       overlay.style.display = 'none';
+      clearInterval(liveSimulationInterval); // Остановка симуляции для экономии ресурсов
     });
 
-    /* global functions for debugging */
-    window.fireEventMarkerFound = () => {
-      const event = new CustomEvent('markerFound');
-      hiroMarker.dispatchEvent(event);
-    }
-
-    window.fireEventMarkerLost = () => {
-      const event = new CustomEvent('markerLost');
-      hiroMarker.dispatchEvent(event);
-    }
+    /* Вспомогательные функции для отладки в консоли браузера на ПК */
+    window.fireEventMarkerFound = () => { hiroMarker.dispatchEvent(new CustomEvent('markerFound')); }
+    window.fireEventMarkerLost = () => { hiroMarker.dispatchEvent(new CustomEvent('markerLost')); }
   </script>
 </body>
 </html>
