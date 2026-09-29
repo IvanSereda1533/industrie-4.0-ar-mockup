@@ -2,12 +2,12 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
   <title>AR Mockup - CPS-I40</title>
   
-  <!-- ИСПРАВЛЕНО: Правильные рабочие ссылки на библиотеки -->
+  <!-- Исправленные стабильные библиотеки -->
   <script src="https://aframe.io"></script>
-  <script src="https://jsdelivr.net"></script>
+  <script src="https://githack.com"></script>
   
   <style>
     :root { color-scheme: dark; }
@@ -19,7 +19,7 @@
       user-select: none;
     }
     
-    /* Upper Bar Status */
+    /* Status Top Bar */
     .top-bar {
       position: fixed;
       top: 0;
@@ -49,11 +49,11 @@
       bottom: 25px;
       left: 15px;
       right: 15px;
-      z-index: 10;
+      z-index: 999; /* Поверх всех элементов AR.js */
       padding: 18px;
       border: 1px solid rgba(0, 255, 102, 0.35);
       border-radius: 10px;
-      background: rgba(10, 15, 12, 0.85);
+      background: rgba(10, 15, 12, 0.9);
       backdrop-filter: blur(8px);
       color: #fff;
       box-shadow: 0 4px 25px rgba(0,0,0,0.7);
@@ -111,10 +111,9 @@
       color: #00ff66; 
     }
 
-    video, canvas {
-      width: 100vw !important;
-      height: 100vh !important;
-      object-fit: cover !important;
+    /* Исправление отображения видеопотока видеокамеры */
+    .a-canvas {
+      z-index: 1;
     }
   </style>
 </head>
@@ -126,16 +125,14 @@
     <div class="status-secure">🔒 HTTPS / TLS Secure</div>
   </div>
 
-  <!-- AR Scene -->
+  <!-- AR Сцена с автоматической и гибкой настройкой камеры -->
   <a-scene
     vr-mode-ui="enabled: false"
-    renderer="logarithmicDepthBuffer: true; precision: medium;"
     embedded
-    arjs="sourceType: webcam; facingMode: environment; debugUIEnabled: false;">
+    arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono_and_matrix;">
     
     <a-marker preset="hiro" id="hiro-marker"></a-marker>
     
-    <!-- ИСПРАВЛЕНО: Возвращена камера, без нее AR.js не видит маркер -->
     
   </a-scene>
 
@@ -165,64 +162,67 @@
   </div>
 
   <script>
-    const overlay = document.getElementById('overlay');
-    const hiroMarker = document.getElementById('hiro-marker');
-    
-    const sensorValue = document.getElementById('sensor-value');
-    const ventilStatus = document.getElementById('ventil-status');
-    
-    let liveSimulationInterval;
-    let currentVolume = 0;
+    window.onload = () => {
+      const overlay = document.getElementById('overlay');
+      const hiroMarker = document.getElementById('hiro-marker');
+      const sensorValue = document.getElementById('sensor-value');
+      const ventilStatus = document.getElementById('ventil-status');
+      
+      let liveSimulationInterval;
+      let currentVolume = 0;
 
-    function updateProcessSteps(activeCount) {
-      for (let i = 1; i <= 5; i++) {
-        const stepEl = document.getElementById(`step${i}`);
-        if (i <= activeCount) {
-          stepEl.classList.add('active');
-        } else {
-          stepEl.classList.remove('active');
+      function updateProcessSteps(activeCount) {
+        for (let i = 1; i <= 5; i++) {
+          const stepEl = document.getElementById(`step${i}`);
+          if (stepEl) {
+            if (i <= activeCount) {
+              stepEl.classList.add('active');
+            } else {
+              stepEl.classList.remove('active');
+            }
+          }
         }
       }
-    }
 
-    hiroMarker.addEventListener('markerFound', () => {
-      console.debug('Hiro Marker found');
-      overlay.style.display = 'block';
-      
-      liveSimulationInterval = setInterval(() => {
-        currentVolume += 20;
+      hiroMarker.addEventListener('markerFound', () => {
+        console.debug('Hiro Marker found');
+        overlay.style.display = 'block';
         
-        if (currentVolume > 100) {
-          currentVolume = 0;
-        }
+        liveSimulationInterval = setInterval(() => {
+          currentVolume += 20;
+          
+          if (currentVolume > 100) {
+            currentVolume = 0;
+          }
 
-        if (currentVolume === 0) {
-          sensorValue.innerHTML = `0% (<span style="color:#ffcc00">Dose leer</span>)`;
-          ventilStatus.innerHTML = 'Befüllung startet...';
-          updateProcessSteps(2);
-        } 
-        else if (currentVolume > 0 && currentVolume < 100) {
-          sensorValue.innerHTML = `${currentVolume}%`;
-          ventilStatus.innerHTML = '<span style="color:#00ff66">Befüllung läuft</span>';
-          updateProcessSteps(4);
-        } 
-        else if (currentVolume === 100) {
-          sensorValue.innerHTML = `100% (<span style="color:#00ff66">Dose voll</span>)`;
-          ventilStatus.innerHTML = '<span style="color:#ff3333">Gestoppt (Rückmeldung)</span>';
-          updateProcessSteps(5);
-        }
-      }, 1500);
-    });
+          if (currentVolume === 0) {
+            sensorValue.innerHTML = `0% (<span style="color:#ffcc00">Dose leer</span>)`;
+            ventilStatus.innerHTML = 'Befüllung startet...';
+            updateProcessSteps(2);
+          } 
+          else if (currentVolume > 0 && currentVolume < 100) {
+            sensorValue.innerHTML = `${currentVolume}%`;
+            ventilStatus.innerHTML = '<span style="color:#00ff66">Befüllung läuft</span>';
+            updateProcessSteps(4);
+          } 
+          else if (currentVolume === 100) {
+            sensorValue.innerHTML = `100% (<span style="color:#00ff66">Dose voll</span>)`;
+            ventilStatus.innerHTML = '<span style="color:#ff3333">Gestoppt (Rückmeldung)</span>';
+            updateProcessSteps(5);
+          }
+        }, 1500);
+      });
 
-    hiroMarker.addEventListener('markerLost', () => {
-      console.debug('Hiro Marker lost');
-      overlay.style.display = 'none';
-      clearInterval(liveSimulationInterval);
-    });
+      hiroMarker.addEventListener('markerLost', () => {
+        console.debug('Hiro Marker lost');
+        overlay.style.display = 'none';
+        clearInterval(liveSimulationInterval);
+      });
 
-    /* Debug triggers */
-    window.fireEventMarkerFound = () => { hiroMarker.dispatchEvent(new CustomEvent('markerFound')); }
-    window.fireEventMarkerLost = () => { hiroMarker.dispatchEvent(new CustomEvent('markerLost')); }
+      /* Глобальные функции дебага */
+      window.fireEventMarkerFound = () => { hiroMarker.dispatchEvent(new CustomEvent('markerFound')); }
+      window.fireEventMarkerLost = () => { hiroMarker.dispatchEvent(new CustomEvent('markerLost')); }
+    };
   </script>
 </body>
 </html>
