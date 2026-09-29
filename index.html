@@ -3,9 +3,9 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Industrie 4.0 AR Mockup (Marker-based)</title>
+  <title>Industrie 4.0 AR Mockup</title>
   
-  <!-- Подключаем чистый и стабильный скрипт для поиска маркеров -->
+  <!-- Подключаем легкий и стабильный анализатор пикселей камеры -->
   <script src="https://jsdelivr.net"></script>
   <script src="https://jsdelivr.net"></script>
   
@@ -43,9 +43,8 @@
       z-index: 10;
     }
 
-    /* ИСПРАВЛЕНО: Теперь оверлей скрыт (display: none) по умолчанию */
+    /* Оверлей-дашборд */
     #overlay {
-      display: none; 
       position: fixed;
       bottom: 30px;
       left: 20px;
@@ -62,43 +61,64 @@
     .title { color: #00ff66; font-weight: bold; margin-bottom: 10px; }
     .row { display: flex; justify-content: space-between; margin: 5px 0; }
     
+    /* Шаги процесса */
     .steps { display: flex; justify-content: space-between; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; font-size: 11px; }
     .step { color: #555; }
     .step.active { color: #00ff66; font-weight: bold; }
-    
-    /* Скрытый холст для обработки кадров внутри JS */
+
+    /* Текст-индикатор поиска */
+    #search-status {
+      color: #ffcc00;
+      font-weight: bold;
+      text-align: center;
+      padding: 10px 0;
+    }
+
+    /* Контент с данными (скрыт внутри оверлея по умолчанию) */
+    #data-content { display: none; }
     #hidden-canvas { display: none; }
   </style>
 </head>
 <body>
 
+  <!-- Чистый видеопоток -->
   <video id="webcam" autoplay playsinline></video>
   <canvas id="hidden-canvas"></canvas>
 
+  <!-- Верхняя панель -->
   <div class="top-bar">
     <div><strong>CPS-i40</strong> Monitor</div>
     <div style="color: #00ff66;">🔒 HTTPS Secure</div>
   </div>
 
+  <!-- Оверлей управления -->
   <div id="overlay">
-    <div class="title">Anlage: CPS-i40 Befüllstation</div>
-    <div class="row"><span>SPS Status:</span><span style="color:#00ff66;">Siemens S7-1516 (Online)</span></div>
-    <div class="row"><span>Füllstand:</span><span id="val-fill">0%</span></div>
-    <div class="row"><span>Ventil-Aktion:</span><span id="val-valve">Warten...</span></div>
+    <!-- Этот блок виден, пока ищем маркер -->
+    <div id="search-status">📷 Сделайте коммит и наведите на маркер ArUco...</div>
 
-    <div class="steps">
-      <span class="step" id="s1">1. Sensor</span>
-      <span class="step" id="s2">2. ET200SP</span>
-      <span class="step" id="s3">3. SPS</span>
-      <span class="step" id="s4">4. Ventil</span>
-      <span class="step" id="s5">5. Full</span>
+    <!-- Этот блок откроется строго при распознавании маркера -->
+    <div id="data-content">
+      <div class="title">Anlage: CPS-i40 Befüllstation</div>
+      <div class="row"><span>SPS Status:</span><span style="color:#00ff66;">Siemens S7-1516 (Online)</span></div>
+      <div class="row"><span>Füllstand:</span><span id="val-fill">0%</span></div>
+      <div class="row"><span>Ventil-Aktion:</span><span id="val-valve">Warten...</span></div>
+
+      <div class="steps">
+        <span class="step" id="s1">1. Sensor</span>
+        <span class="step" id="s2">2. ET200SP</span>
+        <span class="step" id="s3">3. SPS</span>
+        <span class="step" id="s4">4. Ventil</span>
+        <span class="step" id="s5">5. Full</span>
+      </div>
     </div>
   </div>
 
   <script>
     const video = document.getElementById('webcam');
     const canvas = document.getElementById('hidden-canvas');
-    const overlay = document.getElementById('overlay');
+    const searchStatus = document.getElementById('search-status');
+    const dataContent = document.getElementById('data-content');
+    
     const valFill = document.getElementById('val-fill');
     const valValve = document.getElementById('val-valve');
     
@@ -106,59 +126,66 @@
     let volume = 0;
     let markerVisible = false;
 
-    // 1. Включаем камеру
+    // 1. Запуск камеры телефона/ПК
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
       navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
       .then((stream) => {
         video.srcObject = stream;
-        // Инициализируем детектор после запуска видео
         detector = new AR.Detector();
         requestAnimationFrame(tick);
       })
       .catch((err) => {
-        alert("Запрещен доступ к камере.");
+        searchStatus.innerText = "Ошибка: Нет доступа к камере.";
       });
     }
 
-    // 2. Сканируем видеопоток на наличие ArUco-маркеров
+    // 2. Попиксельный анализ каждого кадра видеопотока
     function tick() {
       requestAnimationFrame(tick);
       
       if (video.readyState === video.HAVE_CURRENT_DATA && detector) {
-        // Подгоняем скрытый холст под размер видеокадра
-        canvas.width = video.videoWidth / 2;
-        canvas.height = video.videoHeight / 2;
+        // Задаем физический размер для скрытого обработчика картинок
+        if (canvas.width !== video.videoWidth) {
+          canvas.width = video.videoWidth / 2;
+          canvas.height = video.videoHeight / 2;
+        }
+
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
         
-        // Получаем пиксели и ищем маркеры
         const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // Поиск прямоугольных ArUco-маркеров на холсте
         const markers = detector.detect(imageData);
         
-        // ЛОГИКА: Если найден хотя бы один маркер (любой ID)
         if (markers.length > 0) {
+          // МАРКЕР НАЙДЕН
           if (!markerVisible) {
             markerVisible = true;
-            overlay.style.display = 'block'; // Показываем дашборд
+            searchStatus.style.display = 'none';
+            dataContent.style.display = 'block'; // Показываем технологические данные
           }
         } else {
+          // МАРКЕР ПОТЕРЯН
           if (markerVisible) {
             markerVisible = false;
-            overlay.style.display = 'none'; // Прячем дашборд, если маркера нет в кадре
+            searchStatus.style.display = 'block';
+            dataContent.style.display = 'none'; // Скрываем данные
           }
         }
       }
     }
 
-    // 3. Циклическая симуляция данных из схемы
+    // 3. Логика изменения данных (из вашей технологической схемы)
     function setSteps(count) {
       for(let i=1; i<=5; i++) {
-        document.getElementById('s'+i).classList.toggle('active', i <= count);
+        const el = document.getElementById('s'+i);
+        if(el) el.classList.toggle('active', i <= count);
       }
     }
 
     setInterval(() => {
-      if (!markerVisible) return; // Меняем данные только когда мы смотрим на маркер
+      if (!markerVisible) return; // Процесс идет только если оператор смотрит на маркер
       
       volume += 20;
       if (volume > 100) volume = 0;
