@@ -3,7 +3,12 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Industrie 4.0 AR Mockup</title>
+  <title>Industrie 4.0 AR Mockup (Marker-based)</title>
+  
+  <!-- Подключаем чистый и стабильный скрипт для поиска маркеров -->
+  <script src="https://jsdelivr.net"></script>
+  <script src="https://jsdelivr.net"></script>
+  
   <style>
     body {
       margin: 0;
@@ -13,7 +18,6 @@
       font-family: Arial, sans-serif;
     }
 
-    /* Видеопоток с камеры на весь экран */
     #webcam {
       position: absolute;
       top: 0;
@@ -24,7 +28,6 @@
       z-index: 1;
     }
 
-    /* Верхняя панель статуса */
     .top-bar {
       position: fixed;
       top: 0;
@@ -40,8 +43,9 @@
       z-index: 10;
     }
 
-    /* Оверлей-дашборд внизу экрана */
+    /* ИСПРАВЛЕНО: Теперь оверлей скрыт (display: none) по умолчанию */
     #overlay {
+      display: none; 
       position: fixed;
       bottom: 30px;
       left: 20px;
@@ -58,24 +62,24 @@
     .title { color: #00ff66; font-weight: bold; margin-bottom: 10px; }
     .row { display: flex; justify-content: space-between; margin: 5px 0; }
     
-    /* Шаги процесса */
     .steps { display: flex; justify-content: space-between; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; font-size: 11px; }
     .step { color: #555; }
     .step.active { color: #00ff66; font-weight: bold; }
+    
+    /* Скрытый холст для обработки кадров внутри JS */
+    #hidden-canvas { display: none; }
   </style>
 </head>
 <body>
 
-  <!-- Поток камеры -->
   <video id="webcam" autoplay playsinline></video>
+  <canvas id="hidden-canvas"></canvas>
 
-  <!-- Верхний статус -->
   <div class="top-bar">
     <div><strong>CPS-i40</strong> Monitor</div>
     <div style="color: #00ff66;">🔒 HTTPS Secure</div>
   </div>
 
-  <!-- Дашборд данных -->
   <div id="overlay">
     <div class="title">Anlage: CPS-i40 Befüllstation</div>
     <div class="row"><span>SPS Status:</span><span style="color:#00ff66;">Siemens S7-1516 (Online)</span></div>
@@ -92,28 +96,61 @@
   </div>
 
   <script>
-    // 1. Запуск камеры без тяжелых библиотек
     const video = document.getElementById('webcam');
+    const canvas = document.getElementById('hidden-canvas');
+    const overlay = document.getElementById('overlay');
+    const valFill = document.getElementById('val-fill');
+    const valValve = document.getElementById('val-valve');
     
+    let detector;
+    let volume = 0;
+    let markerVisible = false;
+
+    // 1. Включаем камеру
     if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ 
-        video: { facingMode: 'environment' }, 
-        audio: false 
-      })
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
       .then((stream) => {
         video.srcObject = stream;
+        // Инициализируем детектор после запуска видео
+        detector = new AR.Detector();
+        requestAnimationFrame(tick);
       })
       .catch((err) => {
-        console.error("Fehler beim Kamerazugriff: ", err);
-        alert("Пожалуйста, разрешите доступ к камере в настройках браузера.");
+        alert("Запрещен доступ к камере.");
       });
     }
 
-    // 2. Простая циклическая симуляция данных из схемы
-    const valFill = document.getElementById('val-fill');
-    const valValve = document.getElementById('val-valve');
-    let volume = 0;
+    // 2. Сканируем видеопоток на наличие ArUco-маркеров
+    function tick() {
+      requestAnimationFrame(tick);
+      
+      if (video.readyState === video.HAVE_CURRENT_DATA && detector) {
+        // Подгоняем скрытый холст под размер видеокадра
+        canvas.width = video.videoWidth / 2;
+        canvas.height = video.videoHeight / 2;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        
+        // Получаем пиксели и ищем маркеры
+        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+        const markers = detector.detect(imageData);
+        
+        // ЛОГИКА: Если найден хотя бы один маркер (любой ID)
+        if (markers.length > 0) {
+          if (!markerVisible) {
+            markerVisible = true;
+            overlay.style.display = 'block'; // Показываем дашборд
+          }
+        } else {
+          if (markerVisible) {
+            markerVisible = false;
+            overlay.style.display = 'none'; // Прячем дашборд, если маркера нет в кадре
+          }
+        }
+      }
+    }
 
+    // 3. Циклическая симуляция данных из схемы
     function setSteps(count) {
       for(let i=1; i<=5; i++) {
         document.getElementById('s'+i).classList.toggle('active', i <= count);
@@ -121,6 +158,8 @@
     }
 
     setInterval(() => {
+      if (!markerVisible) return; // Меняем данные только когда мы смотрим на маркер
+      
       volume += 20;
       if (volume > 100) volume = 0;
 
