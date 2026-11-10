@@ -2,47 +2,71 @@
 <html lang="de">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Industrie 4.0 AR - PowerHouse P-101</title>
   <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
   <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.min.js"></script>
   <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
     :root { color-scheme: dark; }
-    body { margin: 0; font-family: Arial, sans-serif; overflow: hidden; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif; overflow: hidden; }
 
+    /* ---------- Fenster nach Marker-Erkennung ---------- */
     #overlay {
       display: none;
       position: fixed;
-      top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%);
+      bottom: calc(16px + env(safe-area-inset-bottom));
+      transform: translateX(-50%);
       z-index: 10;
-      min-width: 240px;
-      padding: 12px 14px;
-      border: 1px solid rgba(255, 255, 255, 0.45);
-      border-radius: 8px;
-      background: rgba(0, 0, 0, 0.6);
-      backdrop-filter: blur(2px);
-      font-size: 16px;
+      width: min(92vw, 360px);
+      box-sizing: border-box;
+      padding: 14px 16px;
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      border-top: 3px solid #2ecc71;
+      border-radius: 14px;
+      background: rgba(16, 18, 22, 0.72);
+      -webkit-backdrop-filter: blur(10px);
+      backdrop-filter: blur(10px);
+      font-size: 15px;
       color: #fff;
     }
-    #overlay.alarm   { border-color: #e74c3c; box-shadow: 0 0 12px #e74c3c; }
-    #overlay.ausfall { border-color: #95a5a6; }
+    #overlay.warn    { border-top-color: #f1c40f; }
+    #overlay.alarm   { border-top-color: #ff5a4f; box-shadow: 0 0 18px rgba(255, 90, 79, 0.45); }
+    #overlay.ausfall { border-top-color: #95a5a6; }
 
-    .title { font-weight: bold; margin-bottom: 8px; }
-    .row   { display: flex; justify-content: space-between; gap: 16px; margin: 4px 0; }
-    .small { font-size: 12px; opacity: 0.7; margin-top: 6px; }
-    .red   { color: #ff6b5b; }
-    .green { color: #5cd65c; }
-    .grey  { color: #bdc3c7; }
+    .title { display: flex; justify-content: space-between; align-items: baseline; font-weight: 700; font-size: 16px; }
+    .title small { font-weight: 400; font-size: 12px; opacity: 0.7; }
+    .big { font-size: 34px; font-weight: 800; margin: 4px 0 8px; font-variant-numeric: tabular-nums; }
+    .big span { font-size: 14px; font-weight: 400; opacity: 0.6; }
 
+    .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-bottom: 8px; }
+    .stats div { background: rgba(255, 255, 255, 0.07); border-radius: 8px; padding: 5px 8px; }
+    .stats label { display: block; font-size: 10px; opacity: 0.6; text-transform: uppercase; letter-spacing: 0.05em; }
+    .stats b { font-variant-numeric: tabular-nums; }
+
+    .row { display: flex; justify-content: space-between; gap: 16px; margin: 3px 0; }
+    .row span { opacity: 0.75; }
+    .small { font-size: 12px; opacity: 0.6; margin-top: 6px; }
+    .red    { color: #ff6b5b; }
+    .green  { color: #5cd65c; }
+    .yellow { color: #f1c40f; }
+    .grey   { color: #bdc3c7; }
+
+    /* ---------- MQTT-Anzeige oben links ---------- */
     #conn {
-      position: fixed; top: 8px; left: 8px; z-index: 11;
-      padding: 4px 8px; border-radius: 4px;
-      background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px;
+      position: fixed;
+      top: calc(8px + env(safe-area-inset-top));
+      left: 8px;
+      z-index: 11;
+      padding: 4px 10px;
+      border-radius: 999px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      font-size: 12px;
     }
 
+    /* ---------- Kamera-/Canvas-Darstellung ---------- */
     video, canvas {
       width: 100vw !important;
       height: 100vh !important;
@@ -68,8 +92,14 @@
   <div id="conn">MQTT: verbinde…</div>
 
   <div id="overlay">
-    <div class="title">PowerHouse P-101</div>
-    <div class="row"><span>Vibration</span><b id="ov-value">–</b></div>
+    <div class="title">PowerHouse P-101 <small id="ov-trend"></small></div>
+    <div class="big" id="ov-value">– <span>mm/s</span></div>
+    <div class="stats">
+      <div><label>Ø 5 min</label><b id="ov-avg">–</b></div>
+      <div><label>Min</label><b id="ov-min">–</b></div>
+      <div><label>Max</label><b id="ov-max">–</b></div>
+    </div>
+    <div class="row"><span>Zustand</span><b id="ov-op">–</b></div>
     <div class="row"><span>Alarm</span><b id="ov-alarm">–</b></div>
     <div class="row"><span>Datenquelle</span><b id="ov-status">–</b></div>
     <div class="small" id="ov-time">warte auf Daten…</div>
@@ -78,53 +108,105 @@
 
   <script>
     // ---------- Konfiguration ----------
-    const BASE   = '/bbk-lf7/23/power-house/vibration';
-    const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
+    const BASE      = '/bbk-lf7/23/power-house/vibration';
+    const BROKER    = 'wss://broker.hivemq.com:8884/mqtt';
+    const ALARM_T   = 6.0;              // wie im Node-RED-Flow
+    const WARN_T    = 4.0;              // ab hier "erhöht"
+    const WINDOW_MS = 5 * 60 * 1000;    // Statistik über 5 Minuten
+    const STALE_MS  = 15 * 1000;        // 15 s ohne Wert = keine Daten
 
     // ---------- Elemente ----------
-    const overlay     = document.getElementById('overlay');
-    const hiroMarker  = document.getElementById('hiro-marker');
-    const markerCount = document.getElementById('marker-count');
-    const conn        = document.getElementById('conn');
-    const ovValue     = document.getElementById('ov-value');
-    const ovAlarm     = document.getElementById('ov-alarm');
-    const ovStatus    = document.getElementById('ov-status');
-    const ovTime      = document.getElementById('ov-time');
-    const arBox       = document.getElementById('ar-box');
-    const arText      = document.getElementById('ar-text');
+    const $ = id => document.getElementById(id);
+    const overlay     = $('overlay');
+    const hiroMarker  = $('hiro-marker');
+    const markerCount = $('marker-count');
+    const conn        = $('conn');
+    const arBox       = $('ar-box');
+    const arText      = $('ar-text');
 
     // ---------- Zustand ----------
-    const state = { value: null, alarm: null, status: null, ts: null };
+    const state = { value: null, ts: null, alarm: null, alarmCount: 0, alarmTs: null, status: null, history: [] };
     let markerFoundCount = 0;
 
+    const fmt   = v => (v == null || isNaN(v)) ? '–' : v.toFixed(2).replace('.', ',');
+    const mean  = a => a.reduce((s, x) => s + x, 0) / a.length;
+    const time  = ts => new Date(ts).toLocaleTimeString('de-DE');
+    const stale = () => !state.ts || Date.now() - state.ts > STALE_MS;
+
+    function opState(v) {
+      if (v == null) return '–';
+      if (v < 0.3)     return 'Stillstand';
+      if (v < WARN_T)  return 'Normal';
+      if (v < ALARM_T) return 'Erhöht';
+      return 'Kritisch';
+    }
+
+    function setText(id, text, cls) {
+      const el = $(id);
+      el.textContent = text;
+      el.className = cls || '';
+    }
+
+    // ---------- Darstellung ----------
     function render() {
-      // Overlay
-      ovValue.textContent = state.value == null ? '–' : state.value.toFixed(2) + ' mm/s';
+      const vals = state.history.map(p => p.v);
 
-      if (state.alarm === 'alarm')   { ovAlarm.textContent = 'ALARM'; ovAlarm.className = 'red'; }
-      else if (state.alarm === 'ok') { ovAlarm.textContent = 'OK';    ovAlarm.className = 'green'; }
-      else                           { ovAlarm.textContent = '–';     ovAlarm.className = ''; }
+      // Hauptwert
+      $('ov-value').innerHTML = fmt(state.value) + ' <span>mm/s</span>';
 
-      if (state.status === 'ausfall')     { ovStatus.textContent = 'AUSFALL';   ovStatus.className = 'grey'; }
-      else if (state.status === 'online') { ovStatus.textContent = 'verfügbar'; ovStatus.className = 'green'; }
-      else                                { ovStatus.textContent = '–';         ovStatus.className = ''; }
+      // Statistik der letzten 5 Minuten
+      $('ov-avg').textContent = vals.length ? fmt(mean(vals))      : '–';
+      $('ov-min').textContent = vals.length ? fmt(Math.min(...vals)) : '–';
+      $('ov-max').textContent = vals.length ? fmt(Math.max(...vals)) : '–';
 
-      ovTime.textContent = state.ts ? 'zuletzt: ' + new Date(state.ts).toLocaleTimeString() : 'warte auf Daten…';
+      // Trend: letzte 5 Werte vs. die 5 davor
+      let trend = '';
+      if (vals.length >= 10) {
+        const d = mean(vals.slice(-5)) - mean(vals.slice(-10, -5));
+        trend = d > 0.15 ? '↑ steigend' : d < -0.15 ? '↓ fallend' : '→ stabil';
+      }
+      $('ov-trend').textContent = trend;
 
-      overlay.classList.toggle('alarm',   state.alarm === 'alarm');
-      overlay.classList.toggle('ausfall', state.status === 'ausfall');
+      // Betriebszustand
+      const op = stale() ? '–' : opState(state.value);
+      const opCls = { 'Stillstand': 'grey', 'Normal': 'green', 'Erhöht': 'yellow', 'Kritisch': 'red' }[op];
+      setText('ov-op', op, opCls);
 
-      // AR-Objekte
-      let color = '#27ae60';                         // grün = normal
-      if (state.alarm === 'alarm')    color = '#e74c3c'; // rot = Alarm
-      if (state.status === 'ausfall') color = '#7f8c8d'; // grau = keine Daten
+      // Alarm (aus Node-RED, Topic …/alarm)
+      const alarmInfo = state.alarmCount ? ' (' + state.alarmCount + '×)' : '';
+      if (state.alarm === 'alarm')   setText('ov-alarm', 'ALARM' + alarmInfo, 'red');
+      else if (state.alarm === 'ok') setText('ov-alarm', 'OK' + alarmInfo, 'green');
+      else                           setText('ov-alarm', '–');
+
+      // Datenquelle (aus Node-RED, Topic …/status)
+      if (state.status === 'ausfall') setText('ov-status', 'AUSFALL', 'grey');
+      else if (stale())               setText('ov-status', 'keine Daten', 'yellow');
+      else if (state.status === 'online' || state.ts) setText('ov-status', 'verfügbar', 'green');
+      else                            setText('ov-status', '–');
+
+      // Zeit
+      let t = state.ts ? 'Letzter Wert: ' + time(state.ts) : 'warte auf Daten…';
+      if (state.alarmTs) t += ' · letzter Alarm: ' + time(state.alarmTs);
+      $('ov-time').textContent = t;
+
+      // Rahmenfarbe des Fensters
+      overlay.classList.remove('warn', 'alarm', 'ausfall');
+      if (state.status === 'ausfall' || stale())             overlay.classList.add('ausfall');
+      else if (state.alarm === 'alarm')                      overlay.classList.add('alarm');
+      else if (state.value != null && state.value >= WARN_T) overlay.classList.add('warn');
+
+      // ---------- AR-Objekte ----------
+      let color = '#27ae60';                                       // grün = normal
+      if (state.value != null && state.value >= WARN_T) color = '#f1c40f'; // gelb = erhöht
+      if (state.alarm === 'alarm')                     color = '#e74c3c'; // rot = Alarm
+      if (state.status === 'ausfall' || stale())       color = '#7f8c8d'; // grau = keine Daten
       arBox.setAttribute('color', color);
 
       const h = Math.max(0.1, (state.value || 0) / 5);  // 10 mm/s ≈ 2 Einheiten hoch
       arBox.setAttribute('height', h);
       arBox.setAttribute('position', '0 ' + (h / 2) + ' 0');
 
-      let label = state.value == null ? 'keine Daten' : state.value.toFixed(2) + ' mm/s';
+      let label = stale() ? 'keine Daten' : fmt(state.value) + ' mm/s';
       if (state.alarm === 'alarm')    label += '  ALARM';
       if (state.status === 'ausfall') label = 'AUSFALL';
       arText.setAttribute('value', label);
@@ -138,31 +220,45 @@
       client.subscribe([BASE, BASE + '/alarm', BASE + '/status']);
     });
     client.on('reconnect', () => conn.textContent = 'MQTT: verbinde neu…');
+    client.on('close',     () => conn.textContent = 'MQTT: getrennt');
     client.on('error', err => conn.textContent = 'MQTT Fehler: ' + err.message);
 
-    client.on('message', (topic, message) => {
+    client.on('message', (topic, message, packet) => {
       let data;
       try { data = JSON.parse(message.toString()); } catch (e) { data = message.toString(); }
 
       if (topic === BASE) {
-        state.value = Number(data);
+        const v = Number(data);
+        if (isNaN(v)) return;
+        state.value = v;
         state.ts = Date.now();
+        state.history.push({ ts: state.ts, v });
+        state.history = state.history.filter(p => state.ts - p.ts <= WINDOW_MS);
       } else if (topic === BASE + '/alarm') {
-        state.alarm = data.state;           // 'alarm' oder 'ok'
+        state.alarm = data.state;                        // 'alarm' oder 'ok'
+        if (data.state === 'alarm' && !packet.retain) {  // gespeicherte Nachricht nicht mitzählen
+          state.alarmCount += 1;
+          state.alarmTs = data.ts || Date.now();
+        }
       } else if (topic === BASE + '/status') {
-        state.status = data.state;          // 'ausfall' oder 'online'
+        state.status = data.state;                       // 'ausfall' oder 'online'
       }
       render();
     });
 
+    // jede Sekunde neu zeichnen (erkennt ausbleibende Werte)
+    setInterval(render, 1000);
+
     // ---------- Marker ----------
     hiroMarker.addEventListener('markerFound', () => {
+      console.debug('Marker found');
       markerFoundCount += 1;
       markerCount.textContent = 'Marker gefunden: ' + markerFoundCount + '×';
       overlay.style.display = 'block';
     });
 
     hiroMarker.addEventListener('markerLost', () => {
+      console.debug('Marker lost');
       overlay.style.display = 'none';
     });
 
