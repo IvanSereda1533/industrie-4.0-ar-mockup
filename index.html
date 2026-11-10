@@ -3,207 +3,174 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Industrie 4.0 AR Mockup</title>
-  
-  <!-- Подключаем легкий и стабильный анализатор пикселей камеры -->
-  <script src="https://jsdelivr.net"></script>
-  <script src="https://jsdelivr.net"></script>
-  
+  <title>Industrie 4.0 AR - PowerHouse P-101</title>
+  <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.min.js"></script>
+  <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
   <style>
-    body {
-      margin: 0;
-      padding: 0;
-      overflow: hidden;
-      background-color: #000;
-      font-family: Arial, sans-serif;
-    }
+    :root { color-scheme: dark; }
+    body { margin: 0; font-family: Arial, sans-serif; overflow: hidden; }
 
-    #webcam {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100vw;
-      height: 100vh;
-      object-fit: cover;
-      z-index: 1;
-    }
-
-    .top-bar {
-      position: fixed;
-      top: 0;
-      left: 0;
-      right: 0;
-      padding: 10px 15px;
-      background: rgba(0, 0, 0, 0.75);
-      border-bottom: 2px solid #00ff66;
-      color: #fff;
-      font-size: 14px;
-      display: flex;
-      justify-content: space-between;
-      z-index: 10;
-    }
-
-    /* Оверлей-дашборд */
     #overlay {
+      display: none;
       position: fixed;
-      bottom: 30px;
-      left: 20px;
-      right: 20px;
-      padding: 15px;
-      background: rgba(0, 0, 0, 0.85);
-      border: 1px solid #00ff66;
-      border-radius: 8px;
-      color: #fff;
-      font-size: 14px;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
       z-index: 10;
+      min-width: 240px;
+      padding: 12px 14px;
+      border: 1px solid rgba(255, 255, 255, 0.45);
+      border-radius: 8px;
+      background: rgba(0, 0, 0, 0.6);
+      backdrop-filter: blur(2px);
+      font-size: 16px;
+      color: #fff;
+    }
+    #overlay.alarm   { border-color: #e74c3c; box-shadow: 0 0 12px #e74c3c; }
+    #overlay.ausfall { border-color: #95a5a6; }
+
+    .title { font-weight: bold; margin-bottom: 8px; }
+    .row   { display: flex; justify-content: space-between; gap: 16px; margin: 4px 0; }
+    .small { font-size: 12px; opacity: 0.7; margin-top: 6px; }
+    .red   { color: #ff6b5b; }
+    .green { color: #5cd65c; }
+    .grey  { color: #bdc3c7; }
+
+    #conn {
+      position: fixed; top: 8px; left: 8px; z-index: 11;
+      padding: 4px 8px; border-radius: 4px;
+      background: rgba(0, 0, 0, 0.6); color: #fff; font-size: 12px;
     }
 
-    .title { color: #00ff66; font-weight: bold; margin-bottom: 10px; }
-    .row { display: flex; justify-content: space-between; margin: 5px 0; }
-    
-    /* Шаги процесса */
-    .steps { display: flex; justify-content: space-between; margin-top: 15px; border-top: 1px solid #333; padding-top: 10px; font-size: 11px; }
-    .step { color: #555; }
-    .step.active { color: #00ff66; font-weight: bold; }
-
-    /* Текст-индикатор поиска */
-    #search-status {
-      color: #ffcc00;
-      font-weight: bold;
-      text-align: center;
-      padding: 10px 0;
+    video, canvas {
+      width: 100vw !important;
+      height: 100vh !important;
+      object-fit: contain !important;
     }
-
-    /* Контент с данными (скрыт внутри оверлея по умолчанию) */
-    #data-content { display: none; }
-    #hidden-canvas { display: none; }
   </style>
 </head>
 <body>
+  <a-scene
+    vr-mode-ui="enabled: false"
+    renderer="logarithmicDepthBuffer: true"
+    embedded
+    arjs="sourceType: webcam; facingMode: environment; sourceWidth: 1280; sourceHeight: 720; displayWidth: 1280; displayHeight: 720; debugUIEnabled: false;">
+    <a-marker preset="hiro" id="hiro-marker">
+      <!-- Säule: Höhe = Vibrationswert, Farbe = Zustand -->
+      <a-box id="ar-box" position="0 0.25 0" width="0.5" depth="0.5" height="0.5" color="#27ae60" opacity="0.85"></a-box>
+      <!-- Text flach auf dem Marker -->
+      <a-text id="ar-text" value="warte..." position="0 0.05 0.9" rotation="-90 0 0" align="center" width="4" color="#ffffff"></a-text>
+    </a-marker>
+    <a-entity camera></a-entity>
+  </a-scene>
 
-  <!-- Чистый видеопоток -->
-  <video id="webcam" autoplay playsinline></video>
-  <canvas id="hidden-canvas"></canvas>
+  <div id="conn">MQTT: verbinde…</div>
 
-  <!-- Верхняя панель -->
-  <div class="top-bar">
-    <div><strong>CPS-i40</strong> Monitor</div>
-    <div style="color: #00ff66;">🔒 HTTPS Secure</div>
-  </div>
-
-  <!-- Оверлей управления -->
   <div id="overlay">
-    <!-- Этот блок виден, пока ищем маркер -->
-    <div id="search-status">📷 Сделайте коммит и наведите на маркер ArUco...</div>
-
-    <!-- Этот блок откроется строго при распознавании маркера -->
-    <div id="data-content">
-      <div class="title">Anlage: CPS-i40 Befüllstation</div>
-      <div class="row"><span>SPS Status:</span><span style="color:#00ff66;">Siemens S7-1516 (Online)</span></div>
-      <div class="row"><span>Füllstand:</span><span id="val-fill">0%</span></div>
-      <div class="row"><span>Ventil-Aktion:</span><span id="val-valve">Warten...</span></div>
-
-      <div class="steps">
-        <span class="step" id="s1">1. Sensor</span>
-        <span class="step" id="s2">2. ET200SP</span>
-        <span class="step" id="s3">3. SPS</span>
-        <span class="step" id="s4">4. Ventil</span>
-        <span class="step" id="s5">5. Full</span>
-      </div>
-    </div>
+    <div class="title">PowerHouse P-101</div>
+    <div class="row"><span>Vibration</span><b id="ov-value">–</b></div>
+    <div class="row"><span>Alarm</span><b id="ov-alarm">–</b></div>
+    <div class="row"><span>Datenquelle</span><b id="ov-status">–</b></div>
+    <div class="small" id="ov-time">warte auf Daten…</div>
+    <div class="small" id="marker-count">The Marker was not yet found</div>
   </div>
 
   <script>
-    const video = document.getElementById('webcam');
-    const canvas = document.getElementById('hidden-canvas');
-    const searchStatus = document.getElementById('search-status');
-    const dataContent = document.getElementById('data-content');
-    
-    const valFill = document.getElementById('val-fill');
-    const valValve = document.getElementById('val-valve');
-    
-    let detector;
-    let volume = 0;
-    let markerVisible = false;
+    // ---------- Konfiguration ----------
+    const BASE   = '/bbk-lf7/23/power-house/vibration';
+    const BROKER = 'wss://broker.hivemq.com:8884/mqtt';
 
-    // 1. Запуск камеры телефона/ПК
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-      .then((stream) => {
-        video.srcObject = stream;
-        detector = new AR.Detector();
-        requestAnimationFrame(tick);
-      })
-      .catch((err) => {
-        searchStatus.innerText = "Ошибка: Нет доступа к камере.";
-      });
+    // ---------- Elemente ----------
+    const overlay     = document.getElementById('overlay');
+    const hiroMarker  = document.getElementById('hiro-marker');
+    const markerCount = document.getElementById('marker-count');
+    const conn        = document.getElementById('conn');
+    const ovValue     = document.getElementById('ov-value');
+    const ovAlarm     = document.getElementById('ov-alarm');
+    const ovStatus    = document.getElementById('ov-status');
+    const ovTime      = document.getElementById('ov-time');
+    const arBox       = document.getElementById('ar-box');
+    const arText      = document.getElementById('ar-text');
+
+    // ---------- Zustand ----------
+    const state = { value: null, alarm: null, status: null, ts: null };
+    let markerFoundCount = 0;
+
+    function render() {
+      // Overlay
+      ovValue.textContent = state.value == null ? '–' : state.value.toFixed(2) + ' mm/s';
+
+      if (state.alarm === 'alarm')   { ovAlarm.textContent = 'ALARM'; ovAlarm.className = 'red'; }
+      else if (state.alarm === 'ok') { ovAlarm.textContent = 'OK';    ovAlarm.className = 'green'; }
+      else                           { ovAlarm.textContent = '–';     ovAlarm.className = ''; }
+
+      if (state.status === 'ausfall')     { ovStatus.textContent = 'AUSFALL';   ovStatus.className = 'grey'; }
+      else if (state.status === 'online') { ovStatus.textContent = 'verfügbar'; ovStatus.className = 'green'; }
+      else                                { ovStatus.textContent = '–';         ovStatus.className = ''; }
+
+      ovTime.textContent = state.ts ? 'zuletzt: ' + new Date(state.ts).toLocaleTimeString() : 'warte auf Daten…';
+
+      overlay.classList.toggle('alarm',   state.alarm === 'alarm');
+      overlay.classList.toggle('ausfall', state.status === 'ausfall');
+
+      // AR-Objekte
+      let color = '#27ae60';                         // grün = normal
+      if (state.alarm === 'alarm')    color = '#e74c3c'; // rot = Alarm
+      if (state.status === 'ausfall') color = '#7f8c8d'; // grau = keine Daten
+      arBox.setAttribute('color', color);
+
+      const h = Math.max(0.1, (state.value || 0) / 5);  // 10 mm/s ≈ 2 Einheiten hoch
+      arBox.setAttribute('height', h);
+      arBox.setAttribute('position', '0 ' + (h / 2) + ' 0');
+
+      let label = state.value == null ? 'keine Daten' : state.value.toFixed(2) + ' mm/s';
+      if (state.alarm === 'alarm')    label += '  ALARM';
+      if (state.status === 'ausfall') label = 'AUSFALL';
+      arText.setAttribute('value', label);
     }
 
-    // 2. Попиксельный анализ каждого кадра видеопотока
-    function tick() {
-      requestAnimationFrame(tick);
-      
-      if (video.readyState === video.HAVE_CURRENT_DATA && detector) {
-        // Задаем физический размер для скрытого обработчика картинок
-        if (canvas.width !== video.videoWidth) {
-          canvas.width = video.videoWidth / 2;
-          canvas.height = video.videoHeight / 2;
-        }
+    // ---------- MQTT ----------
+    const client = mqtt.connect(BROKER);
 
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        
-        const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-        
-        // Поиск прямоугольных ArUco-маркеров на холсте
-        const markers = detector.detect(imageData);
-        
-        if (markers.length > 0) {
-          // МАРКЕР НАЙДЕН
-          if (!markerVisible) {
-            markerVisible = true;
-            searchStatus.style.display = 'none';
-            dataContent.style.display = 'block'; // Показываем технологические данные
-          }
-        } else {
-          // МАРКЕР ПОТЕРЯН
-          if (markerVisible) {
-            markerVisible = false;
-            searchStatus.style.display = 'block';
-            dataContent.style.display = 'none'; // Скрываем данные
-          }
-        }
+    client.on('connect', () => {
+      conn.textContent = 'MQTT: verbunden';
+      client.subscribe([BASE, BASE + '/alarm', BASE + '/status']);
+    });
+    client.on('reconnect', () => conn.textContent = 'MQTT: verbinde neu…');
+    client.on('error', err => conn.textContent = 'MQTT Fehler: ' + err.message);
+
+    client.on('message', (topic, message) => {
+      let data;
+      try { data = JSON.parse(message.toString()); } catch (e) { data = message.toString(); }
+
+      if (topic === BASE) {
+        state.value = Number(data);
+        state.ts = Date.now();
+      } else if (topic === BASE + '/alarm') {
+        state.alarm = data.state;           // 'alarm' oder 'ok'
+      } else if (topic === BASE + '/status') {
+        state.status = data.state;          // 'ausfall' oder 'online'
       }
-    }
+      render();
+    });
 
-    // 3. Логика изменения данных (из вашей технологической схемы)
-    function setSteps(count) {
-      for(let i=1; i<=5; i++) {
-        const el = document.getElementById('s'+i);
-        if(el) el.classList.toggle('active', i <= count);
-      }
-    }
+    // ---------- Marker ----------
+    hiroMarker.addEventListener('markerFound', () => {
+      markerFoundCount += 1;
+      markerCount.textContent = 'Marker gefunden: ' + markerFoundCount + '×';
+      overlay.style.display = 'block';
+    });
 
-    setInterval(() => {
-      if (!markerVisible) return; // Процесс идет только если оператор смотрит на маркер
-      
-      volume += 20;
-      if (volume > 100) volume = 0;
+    hiroMarker.addEventListener('markerLost', () => {
+      overlay.style.display = 'none';
+    });
 
-      if (volume === 0) {
-        valFill.innerHTML = '0% (<span style="color:#ffcc00">Dose leer</span>)';
-        valValve.innerText = 'Befüllung startet...';
-        setSteps(2);
-      } else if (volume < 100) {
-        valFill.innerText = volume + '%';
-        valValve.innerHTML = '<span style="color:#00ff66">Befüllung läuft</span>';
-        setSteps(4);
-      } else {
-        valFill.innerHTML = '100% (<span style="color:#00ff66">Dose voll</span>)';
-        valValve.innerHTML = '<span style="color:#ff3333">Gestoppt (Rückmeldung)</span>';
-        setSteps(5);
-      }
-    }, 1500);
+    /* global functions for debugging */
+    window.fireEventMarkerFound = () => hiroMarker.dispatchEvent(new CustomEvent('markerFound'));
+    window.fireEventMarkerLost  = () => hiroMarker.dispatchEvent(new CustomEvent('markerLost'));
+
+    render();
   </script>
 </body>
 </html>
